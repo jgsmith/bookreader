@@ -117,5 +117,6 @@ this.SinglePageViewPlugin = SinglePageViewPlugin
 
 SinglePageViewPlugin.params =
 	autofit: 'height'
+	cssClass: 'single-page'
 
 BookReader.registerPlugin SinglePageViewPlugin

@@ -56,7 +56,6 @@
       if (index < 0 || index === NaN) {
         return $("<div class='empty-page'></div>");
       }
-      console.log(index);
       imageElement = $("<img />");
       imageContainer = $("<div class='image'></div>");
       imageContainer.append(imageElement);

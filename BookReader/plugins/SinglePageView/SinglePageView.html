@@ -1,0 +1,60 @@
+<html>
+	<head>
+		<title>Testing Single Page View</title>
+		<script src="./jquery.js" type="text/javascript"></script>
+		<script src="./SinglePageView.js" type="text/javascript"></script>
+		<script type="text/javascript">
+			var bookReader = (function() {
+				var that = {}, currentIndex = 1, pageURIs = [ ];
+				
+				pageURIs.push("http://ia600401.us.archive.org/BookReader/BookReaderImages.php?zip=/14/items/devisesetembleme00lafeu/devisesetembleme00lafeu_jp2.zip&file=devisesetembleme00lafeu_jp2/devisesetembleme00lafeu_0006.jp2&scale=2&rotate=0");
+				pageURIs.push("http://ia600401.us.archive.org/BookReader/BookReaderImages.php?zip=/14/items/devisesetembleme00lafeu/devisesetembleme00lafeu_jp2.zip&file=devisesetembleme00lafeu_jp2/devisesetembleme00lafeu_0007.jp2&scale=2&rotate=0");
+				
+				that.getCurrentIndex = function() { return currentIndex; };
+				that.getNumPages = function() { return pageURIs.length; };
+				that.getPageURI = function(idx) { return pageURIs[idx-1]; };
+				that.jumpToIndex = function(idx) {
+					currentIndex = idx;
+					that.parentElement.trigger('indexUpdated', [{newIndex: idx}]);
+				};
+				that.getPageHeight = function() { return 300; };
+				that.getPageWidth = function() { return 200; };
+				return that;
+			}());
+			$(document).ready(function() {
+				bookReader.parentElement = $("#outside");
+				var plugin = new SinglePageViewPlugin;
+				plugin.init(bookReader, $("#inside"));
+			})
+		</script>
+		<style type="text/css">
+			.left-page {
+				float: left;
+				height: 300px;
+				width: 20px;
+			}
+			.left-page:hover {
+				background-color: #cccccc;
+			}
+			.single-page-view {
+			}
+			.single-page-view > .image {
+				margin-left: 20px;
+			}
+			.right-page {
+				float: right;
+				height: 300px;
+				width: 20px;
+			}
+			.right-page:hover {
+				background-color: #cccccc;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="outside">
+			<div id="inside">
+			</div>
+		</div>
+	</body>
+</html>

@@ -47,7 +47,6 @@ class PageStreamViewPlugin
 	buildImage: (index) ->
 		if index < 0 or index == NaN
 			return $("<div class='empty-page'></div>")
-		console.log index
 		imageElement = $("<img />")
 		imageContainer = $("<div class='image'></div>")
 		imageContainer.append imageElement

@@ -139,6 +139,12 @@ function BookReader() {
     this.ttsBuffering   = false;
     this.ttsPoller      = null;
     this.ttsFormat      = null;
+
+	this.plugins = {};
+    
+    // XXXmang fix to not use global
+    //this.plugins = [];
+    //this.plugins = listOfPlugins;
     
     return this;
 };
@@ -146,16 +152,18 @@ function BookReader() {
 (function ($) {
 	
 	// this list of plugins is shared across all instances of BookReader
-	var listOfPlugins = [];
+	var listOfPlugins = {};
 	
 // init()
 //______________________________________________________________________________
-BookReader.prototype.init = function() {
+BookReader.prototype.init = function(parentElement) {
 
     var startIndex = undefined;
+	if(parentElement === undefined) {
+		return;
+	}
     this.pageScale = this.reduce; // preserve current reduce
-    
-    this.parentElement = $('#BookReader'); // XXX hardcoded - in the right place
+    this.parentElement = $(parentElement);
     
     // Find start index and mode if set in location hash
     var params = {};
@@ -202,13 +210,13 @@ BookReader.prototype.init = function() {
     // search engine visibility
     document.title = this.shortTitle(50);
     
-    $("#BookReader").empty();
+    //this.parentElement.empty();
     
     this.initToolbar(this.mode, this.ui); // Build inside of toolbar div
-    $("#BookReader").append("<div id='BRcontainer' dir='ltr'></div>");
-    $("#BRcontainer").append("<div id='BRpageview'></div>");
+    //this.parentElement.append("<div id='BRcontainer' dir='ltr'></div>");
+    //$("#BRcontainer").append("<div id='BRpageview'></div>");
         
-    $("#BRcontainer").bind('scroll', this, function(e) {
+    this.find(".BRcontainer").bind('scroll', this, function(e) {
         e.data.loadLeafs();
     });
     
@@ -218,6 +226,9 @@ BookReader.prototype.init = function() {
     $(window).bind('resize', this, function(e) {
         //console.log('resize!');
 
+		// need an e.activeView plugin object:
+		e.activeView.eventResize()
+/*
         if (1 == e.data.mode) {
             //console.log('centering 1page view');
             if (e.data.autofit) {
@@ -230,7 +241,7 @@ BookReader.prototype.init = function() {
             e.data.loadLeafs();
         } else if (3 == e.data.mode){
             e.data.prepareThumbnailView();
-        } else if (2 == e.data.mode){
+        } else {
             //console.log('drawing 2 page view');
             
             // We only need to prepare again in autofit (size of spread changes)
@@ -253,6 +264,7 @@ BookReader.prototype.init = function() {
                 }
             }
         }
+*/
     });
     
     if (this.protected) {
@@ -286,53 +298,15 @@ BookReader.prototype.init = function() {
         this.firstIndex = startIndex;
         this.prepareThumbnailView();
         this.jumpToIndex(startIndex);
-    } else if(2 == this.mode){        
+    } else {        
         this.displayedIndices=[0];
         this.firstIndex = startIndex;
         this.displayedIndices = [this.firstIndex];
         //console.log('titleLeaf: %d', this.titleLeaf);
         //console.log('displayedIndices: %s', this.displayedIndices);
         this.prepareTwoPageView();
-    } else if(typeof(this.activeView) != 'undefined') {
-		this.displayedIndices=[0];
-		this.firstIndex = startIndex;
-		this.displayedIndices = [this.firstIndex];
-		this.activeView.prepareView();
-	}
-            
-    // we walk the dom and instantiate the plugins we find:
-    //   if an element has a class name that is in the plugin list (prefixed by 'bookreader-'), then
-    //    we assume it's a plugin reference
-    this.plugins = {};
-	(function(self) {
-	    for (var pluginName in listOfPlugins) {
-	    	/*
-			$.each(self.parentElement.find(".bookreader-" + pluginName), function(idx, el) {
-				var thePlugin = new listOfPlugins[pluginName]();
-				thePlugin.init(self, el);
-				self.plugins[listOfPlugins[pluginName].params.type] = self.plugins[listOfPlugins[pluginName].params.type] || {};
-				self.plugins[listOfPlugins[pluginName].params.type][pluginName] = thePlugin;
-			});
-			*/
-			
-			// Hardcoded init
-			var thePlugin = new listOfPlugins[pluginName]();
-			thePlugin.init(self, $('#BRcontainer'));
-			self.plugins[listOfPlugins[pluginName].manifest.type] = self.plugins[listOfPlugins[pluginName].manifest.type] || {};
-			self.plugins[listOfPlugins[pluginName].manifest.type][pluginName] = thePlugin;
-		}
-	})(this);
-	for(var idx in this.plugins["view"]) {
-		this.plugins["view"][idx].refresh();
-	}
-	for(var idx in this.plugins["navigation"]) {
-		this.plugins["navigation"][idx].refresh();
-	}
-	
-	// For now, start with hardcoded view
-	this.activeView = this.plugins['view']['page-stream-view'];
-	this.activeView.show(); // we should first get the current index, e.g. from URL so no visual glitch
-	
+    }
+        
     // Enact other parts of initial params
     this.updateFromParams(params);
 
@@ -353,6 +327,25 @@ BookReader.prototype.init = function() {
         this.getOpenLibraryRecord(this.gotOpenLibraryRecord);
     }
 
+    // we walk the dom and instantiate the plugins we find:
+    //   if an element has a class name that is in the plugin list (prefixed by 'bookreader-'), then
+    //    we assume it's a plugin reference
+	(function(self) {
+	    for (var pluginName in listOfPlugins) {
+			$.each(br.parentElement.find(".bookreader-" + pluginName), function(idx, el) {
+				var thePlugin = new listOfPlugins[pluginName]();
+				thePlugin.init(self, el);
+				self.plugins[listOfPlugins[pluginName].params.type] = self.plugins[listOfPlugins[pluginName].params.type] || [];
+				self.plugins[listOfPlugins[pluginName].params.type].push(thePlugin);
+			});
+		}
+	})(this);
+	for(var idx in this.plugins["view"]) {
+		this.plugins["view"][idx].refresh();
+	}
+	for(var idx in this.plugins["navigation"]) {
+		this.plugins["navigation"][idx].refresh();
+	}
 }
 
 BookReader.prototype.getNumPages = function(){
@@ -429,12 +422,9 @@ BookReader.prototype.drawLeafs = function() {
         this.drawLeafsOnePage();
     } else if (3 == this.mode) {
         this.drawLeafsThumbnail();
-    } else if (2 == this.mode) {
+    } else {
         this.drawLeafsTwoPage();
     }
-	else if(typeof(this.activeView) != 'undefined') {
-		this.activeView.drawLeafs();
-	}
     
 }
 
@@ -468,8 +458,8 @@ BookReader.prototype.drawLeafsOnePage = function() {
     this.timer = null;
 
 
-    var scrollTop = $('#BRcontainer').attr('scrollTop');
-    var scrollBottom = scrollTop + $('#BRcontainer').height();
+    var scrollTop = this.find('.BRcontainer').attr('scrollTop');
+    var scrollBottom = scrollTop + this.find('.BRcontainer').height();
     //console.log('top=' + scrollTop + ' bottom='+scrollBottom);
     
     var indicesToDisplay = [];
@@ -525,7 +515,7 @@ BookReader.prototype.drawLeafsOnePage = function() {
     }
 
     //var viewWidth = $('#BRpageview').width(); //includes scroll bar width
-    var viewWidth = $('#BRcontainer').attr('scrollWidth');
+    var viewWidth = this.find('.BRcontainer').attr('scrollWidth');
 
 
     for (i=0; i<indicesToDisplay.length; i++) {
@@ -547,7 +537,7 @@ BookReader.prototype.drawLeafsOnePage = function() {
             $(div).css('height', height+'px');
             //$(div).text('loading...');
             
-            $('#BRpageview').append(div);
+            this.find('.BRpageview').append(div);
 
             var img = document.createElement("img");
             img.src = this._getPageURI(index, this.reduce, 0);
@@ -579,9 +569,9 @@ BookReader.prototype.drawLeafsOnePage = function() {
     this.updateSearchHilites();
     
     if (null != this.getPageNum(firstIndexToDraw))  {
-        $("#BRpagenum").val(this.getPageNum(this.currentIndex()));
+        this.find(".BRpagenum").val(this.getPageNum(this.currentIndex()));
     } else {
-        $("#BRpagenum").val('');
+        this.find(".BRpagenum").val('');
     }
             
     this.updateToolbarZoom(this.reduce);
@@ -601,7 +591,7 @@ BookReader.prototype.drawLeafsThumbnail = function( seekIndex ) {
     //alert('drawing leafs!');
     this.timer = null;
     
-    var viewWidth = $('#BRcontainer').attr('scrollWidth') - 20; // width minus buffer
+    var viewWidth = this.find('BRcontainer').attr('scrollWidth') - 20; // width minus buffer
 
     //console.log('top=' + scrollTop + ' bottom='+scrollBottom);
 
@@ -654,17 +644,17 @@ BookReader.prototype.drawLeafsThumbnail = function( seekIndex ) {
     }
 
     // reset the bottom position based on thumbnails
-    $('#BRpageview').height(bottomPos);
+    this.find('.BRpageview').height(bottomPos);
 
-    var pageViewBuffer = Math.floor(($('#BRcontainer').attr('scrollWidth') - maxRight) / 2) - 14;
+    var pageViewBuffer = Math.floor((this.find('BRcontainer').attr('scrollWidth') - maxRight) / 2) - 14;
 
     // If seekTop is defined, seeking was requested and target found
     if (typeof(seekTop) != 'undefined') {
-        $('#BRcontainer').scrollTop( seekTop );
+        this.find('.BRcontainer').scrollTop( seekTop );
     }
         
-    var scrollTop = $('#BRcontainer').attr('scrollTop');
-    var scrollBottom = scrollTop + $('#BRcontainer').height();
+    var scrollTop = this.find('.BRcontainer').attr('scrollTop');
+    var scrollBottom = scrollTop + this.find('.BRcontainer').height();
 
     var leafTop = 0;
     var leafBottom = 0;
@@ -811,18 +801,18 @@ BookReader.prototype.drawLeafsThumbnail = function( seekIndex ) {
     }
 
     // remove previous highlights
-    $('.BRpagedivthumb_highlight').removeClass('BRpagedivthumb_highlight');
+    this.find('.BRpagedivthumb_highlight').removeClass('BRpagedivthumb_highlight');
     
     // highlight current page
-    $('#pagediv'+this.currentIndex()).addClass('BRpagedivthumb_highlight');
+    this.find('#pagediv'+this.currentIndex()).addClass('BRpagedivthumb_highlight');
     
     this.lazyLoadThumbnails();
 
     // Update page number box.  $$$ refactor to function
     if (null !== this.getPageNum(this.currentIndex()))  {
-        $("#BRpagenum").val(this.getPageNum(this.currentIndex()));
+        this.find(".BRpagenum").val(this.getPageNum(this.currentIndex()));
     } else {
-        $("#BRpagenum").val('');
+        this.find(".BRpagenum").val('');
     }
 
     this.updateToolbarZoom(this.reduce); 
@@ -833,9 +823,9 @@ BookReader.prototype.lazyLoadThumbnails = function() {
     // console.log('lazy load');
 
     // We check the complete property since load may not be fired if loading from the cache
-    $('.BRlazyloading').filter('[complete=true]').removeClass('BRlazyloading');
+    this.find('.BRlazyloading').filter('[complete=true]').removeClass('BRlazyloading');
 
-    var loading = $('.BRlazyloading').length;
+    var loading = this.find('.BRlazyloading').length;
     var toLoad = this.thumbMaxLoading - loading;
 
     // console.log('  ' + loading + ' thumbnails loading');
@@ -845,7 +835,7 @@ BookReader.prototype.lazyLoadThumbnails = function() {
         
     if (toLoad > 0) {
         // $$$ TODO load those near top (but not beyond) page view first
-        $('#BRpageview img.BRlazyload').filter(':lt(' + toLoad + ')').each( function() {
+        this.find('.BRpageview img.BRlazyload').filter(':lt(' + toLoad + ')').each( function() {
             self.lazyLoadImage(this);
         });
     }
@@ -964,9 +954,9 @@ BookReader.prototype.drawLeafsTwoPage = function() {
 //______________________________________________________________________________
 BookReader.prototype.updatePageNumBox2UP = function() {
     if (null != this.getPageNum(this.twoPage.currentIndexL))  {
-        $("#BRpagenum").val(this.getPageNum(this.currentIndex()));
+        this.find(".BRpagenum").val(this.getPageNum(this.currentIndex()));
     } else {
-        $("#BRpagenum").val('');
+        this.find(".BRpagenum").val('');
     }
     this.updateLocationHash();
 }
@@ -1010,15 +1000,7 @@ BookReader.prototype.zoom = function(direction) {
         case this.constModeThumb:
             // XXX update zoomThumb for named directions
             return this.zoomThumb(direction);
-        
-        default:
-            if(typeof(this.activeView) != 'undefined') {
-				if (direction == 1) {
-					return this.activeView.zoom('in');
-				} else {
-					return this.activeView.zoom('out');
-				}
-			}
+            
     }
 }
 
@@ -1044,7 +1026,7 @@ BookReader.prototype.zoom1up = function(direction) {
     this.pageScale = this.reduce; // preserve current reduce
     this.resizePageView();
 
-    $('#BRpageview').empty()
+    this.find('.BRpageview').empty()
     this.displayedIndices = [];
     this.loadLeafs();
     
@@ -1082,13 +1064,13 @@ BookReader.prototype.resizePageView1up = function() {
     var i;
     var viewHeight = 0;
     //var viewWidth  = $('#BRcontainer').width(); //includes scrollBar
-    var viewWidth  = $('#BRcontainer').attr('clientWidth');   
+    var viewWidth  = this.find('.BRcontainer').attr('clientWidth');   
 
-    var oldScrollTop  = $('#BRcontainer').attr('scrollTop');
-    var oldScrollLeft = $('#BRcontainer').attr('scrollLeft');
+    var oldScrollTop  = this.find('.BRcontainer').attr('scrollTop');
+    var oldScrollLeft = this.find('.BRcontainer').attr('scrollLeft');
     
-    var oldPageViewHeight = $('#BRpageview').height();
-    var oldPageViewWidth = $('#BRpageview').width();
+    var oldPageViewHeight = this.find('.BRpageview').height();
+    var oldPageViewWidth = this.find('.BRpageview').width();
     
     // May have come here after preparing the view, in which case the scrollTop and view height are not set
 
@@ -1122,18 +1104,18 @@ BookReader.prototype.resizePageView1up = function() {
     }
     
     var viewDimensions = this.onePageCalculateViewDimensions(this.reduce, this.padding);
-    $('#BRpageview').height(viewDimensions.height);
-    $('#BRpageview').width(viewDimensions.width);
+    this.find('.BRpageview').height(viewDimensions.height);
+    this.find('.BRpageview').width(viewDimensions.width);
 
     var newCenterY = scrollRatio*viewDimensions.height;
-    var newTop = Math.max(0, Math.floor( newCenterY - $('#BRcontainer').height()/2 ));
-    $('#BRcontainer').attr('scrollTop', newTop);
+    var newTop = Math.max(0, Math.floor( newCenterY - this.find('.BRcontainer').height()/2 ));
+    this.find('.BRcontainer').attr('scrollTop', newTop);
     
     // We use clientWidth here to avoid miscalculating due to scroll bar
     var newCenterX = oldCenterX * (viewWidth / oldPageViewWidth);
-    var newLeft = newCenterX - $('#BRcontainer').attr('clientWidth') / 2;
+    var newLeft = newCenterX - this.find('.BRcontainer').attr('clientWidth') / 2;
     newLeft = Math.max(newLeft, 0);
-    $('#BRcontainer').attr('scrollLeft', newLeft);
+    this.find('.BRcontainer').attr('scrollLeft', newLeft);
     //console.log('oldCenterX ' + oldCenterX + ' newCenterX ' + newCenterX + ' newLeft ' + newLeft);
     
     //this.centerPageView();
@@ -1160,10 +1142,10 @@ BookReader.prototype.onePageCalculateViewDimensions = function(reduce, padding) 
 // Returns the current offset of the viewport center in scaled document coordinates.
 BookReader.prototype.centerX1up = function() {
     var centerX;
-    if ($('#BRpageview').width() < $('#BRcontainer').attr('clientWidth')) { // fully shown
-        centerX = $('#BRpageview').width();
+    if (this.find('.BRpageview').width() < this.find('.BRcontainer').attr('clientWidth')) { // fully shown
+        centerX = this.find('.BRpageview').width();
     } else {
-        centerX = $('#BRcontainer').attr('scrollLeft') + $('#BRcontainer').attr('clientWidth') / 2;
+        centerX = this.find('.BRcontainer').attr('scrollLeft') + this.find('.BRcontainer').attr('clientWidth') / 2;
     }
     centerX = Math.floor(centerX);
     return centerX;
@@ -1173,7 +1155,7 @@ BookReader.prototype.centerX1up = function() {
 //______________________________________________________________________________
 // Returns the current offset of the viewport center in scaled document coordinates.
 BookReader.prototype.centerY1up = function() {
-    var centerY = $('#BRcontainer').attr('scrollTop') + $('#BRcontainer').height() / 2;
+    var centerY = this.find('.BRcontainer').attr('scrollTop') + this.find('.BRcontainer').height() / 2;
     return Math.floor(centerY);
 }
 
@@ -1181,11 +1163,11 @@ BookReader.prototype.centerY1up = function() {
 //______________________________________________________________________________
 BookReader.prototype.centerPageView = function() {
 
-    var scrollWidth  = $('#BRcontainer').attr('scrollWidth');
-    var clientWidth  =  $('#BRcontainer').attr('clientWidth');
+    var scrollWidth  = this.find('.BRcontainer').attr('scrollWidth');
+    var clientWidth  =  this.find('.BRcontainer').attr('clientWidth');
     //console.log('sW='+scrollWidth+' cW='+clientWidth);
     if (scrollWidth > clientWidth) {
-        $('#BRcontainer').attr('scrollLeft', (scrollWidth-clientWidth)/2);
+        this.find('.BRcontainer').attr('scrollLeft', (scrollWidth-clientWidth)/2);
     }
 
 }
@@ -1253,7 +1235,7 @@ BookReader.prototype.zoomThumb = function(direction) {
 //       thumbnail width
 BookReader.prototype.getThumbnailWidth = function(thumbnailColumns) {
     var padding = (thumbnailColumns + 1) * this.thumbPadding;
-    var width = ($('#BRpageview').width() - padding) / (thumbnailColumns + 0.5); // extra 0.5 is for some space at sides
+    var width = (this.find('.BRpageview').width() - padding) / (thumbnailColumns + 0.5); // extra 0.5 is for some space at sides
     return parseInt(width);
 }
 
@@ -1343,7 +1325,7 @@ BookReader.prototype.jumpToPage = function(pageNum) {
         var leafTop = 0;
         var h;
         this.jumpToIndex(pageIndex);
-        $('#BRcontainer').attr('scrollTop', leafTop);
+        this.find('.BRcontainer').attr('scrollTop', leafTop);
         return true;
     }
     
@@ -1397,19 +1379,19 @@ BookReader.prototype.jumpToIndex = function(index, pageX, pageY) {
             leafIndex++;
         }
         this.firstIndex=index;
-        if ($('#BRcontainer').attr('scrollTop') == leafTop) {
+        if (this.find('.BRcontainer').attr('scrollTop') == leafTop) {
             this.loadLeafs();
         } else {
-            $('#BRcontainer').animate({scrollTop: leafTop },'fast');
+            this.find('.BRcontainer').animate({scrollTop: leafTop },'fast');
         }
-    } else if (this.constMode1up == this.mode){
+    } else {
         // 1up
         var leafTop = this.onePageGetPageTop(index);
 
         if (pageY) {
             //console.log('pageY ' + pageY);
             var offset = parseInt( (pageY) / this.reduce);
-            offset -= $('#BRcontainer').attr('clientHeight') >> 1;
+            offset -= this.find('.BRcontainer').attr('clientHeight') >> 1;
             //console.log( 'jumping to ' + leafTop + ' ' + offset);
             leafTop += offset;
         } else {
@@ -1419,15 +1401,15 @@ BookReader.prototype.jumpToIndex = function(index, pageX, pageY) {
 
         if (pageX) {
             var offset = parseInt( (pageX) / this.reduce);
-            offset -= $('#BRcontainer').attr('clientWidth') >> 1;
+            offset -= this.find('.BRcontainer').attr('clientWidth') >> 1;
             leafLeft += offset;
         } else {
             // Preserve left position
-            leafLeft = $('#BRcontainer').scrollLeft();
+            leafLeft = this.find('.BRcontainer').scrollLeft();
         }
 
         //$('#BRcontainer').attr('scrollTop', leafTop);
-        $('#BRcontainer').animate({scrollTop: leafTop, scrollLeft: leafLeft },'fast');
+        this.find('.BRcontainer').animate({scrollTop: leafTop, scrollLeft: leafLeft },'fast');
         
     }
 
@@ -1444,36 +1426,8 @@ BookReader.prototype.switchMode = function(mode) {
         return;
     }
     
-    // Check for new style string plugin name mode
-    if (typeof(mode) == typeof('')) {
-    	// mode is the name of a view plugin - find it
-    	if (typeof(this.plugins.view[mode] != 'undefined')) {
-    		// switch to new view
-    		if (typeof(this.activeView) != 'undefined') {
-	    		this.activeView.hide();
-	    	}
-    		this.activeView = this.plugins.view[mode];
-			this.activeView.calculateReductionFactors();
-			//this.reduce = this.quantizeReduce(this.reduce, this.activeView.reductionFactors);
-			this.activeView.prepareView();
-    		this.activeView.show();
-    		return; // success
-    	}
-    	
-    	// don't have this view
-    	return;
-    }
-    
-    // Asked to switch to an old built-in view
-    
     if (!this.canSwitchToMode(mode)) {
         return;
-    }
-    
-    // We are switching
-    if (typeof(this.activeView) != 'undefined') {
-    	this.activeView.hide();
-    	this.activeView = undefined;
     }
 
     this.autoStop();
@@ -1499,7 +1453,7 @@ BookReader.prototype.switchMode = function(mode) {
     } else if (3 == mode) {
         this.reduce = this.quantizeReduce(this.reduce, this.reductionFactors);
         this.prepareThumbnailView();
-    } else if (2 == mode){
+    } else {
         // $$$ why don't we save autofit?
         // this.twoPage.autofit = null; // Take zoom level from other mode
         this.twoPageCalculateReductionFactors();
@@ -1517,16 +1471,16 @@ BookReader.prototype.prepareOnePageView = function() {
     // var startLeaf = this.displayedIndices[0];
     var startLeaf = this.currentIndex();
         
-    $('#BRcontainer').empty();
-    $('#BRcontainer').css({
+    this.find('.BRcontainer').empty();
+    this.find('.BRcontainer').css({
         overflowY: 'scroll',
         overflowX: 'auto'
     });
         
-    $("#BRcontainer").append("<div id='BRpageview'></div>");
+    this.find(".BRcontainer").append("<div id='BRpageview'></div>");
     
     // Attaches to first child - child must be present
-    $('#BRcontainer').dragscrollable();
+    this.find('.BRcontainer').dragscrollable();
     this.bindGestures($('#BRcontainer'));
 
     // $$$ keep select enabled for now since disabling it breaks keyboard
@@ -2121,47 +2075,27 @@ BookReader.prototype.leftmost = function() {
 // next()
 //______________________________________________________________________________
 BookReader.prototype.next = function() {
-	if(typeof(this.activeView) == 'undefined') {
-	    if (2 == this.mode) {
-	        this.autoStop();
-	        this.flipFwdToIndex(null);
-	    } else if(1 == this.mode || 3 == this.mode){
-	        if (this.firstIndex < this.lastDisplayableIndex()) {
-	            this.jumpToIndex(this.firstIndex+1);
-	        }
-		}
+    if (2 == this.mode) {
+        this.autoStop();
+        this.flipFwdToIndex(null);
     } else {
-		// trigger br_left/br_right event?
-		if('rl' != this.pageProgression) {
-			this.parentElement.trigger('br_right');
-		} else {
-			this.parentElement.trigger('br_left');
-		}
-	}
+        if (this.firstIndex < this.lastDisplayableIndex()) {
+            this.jumpToIndex(this.firstIndex+1);
+        }
+    }
 }
 
 // prev()
 //______________________________________________________________________________
 BookReader.prototype.prev = function() {
-	if(typeof(this.activeView) == 'undefined') {
-	    if (2 == this.mode) {
-	        this.autoStop();
-	        this.flipBackToIndex(null);
-	    } else if(1 == this.mode || 3 == this.mode){
-	        if (this.firstIndex >= 1) {
-	            this.jumpToIndex(this.firstIndex-1);
-	        }
-		}
+    if (2 == this.mode) {
+        this.autoStop();
+        this.flipBackToIndex(null);
     } else {
-		// trigger br_right/br_left event?
-		if('rl' != this.pageProgression) {
-			console.log("br_left");
-			this.parentElement.trigger('br_left');
-		} else {
-			console.log("br_right");
-			this.parentElement.trigger('br_right');
-		}
-	}
+        if (this.firstIndex >= 1) {
+            this.jumpToIndex(this.firstIndex-1);
+        }    
+    }
 }
 
 BookReader.prototype.first = function() {
@@ -3207,7 +3141,7 @@ BookReader.prototype.showEmbedCode = function() {
         MozBoxShadow: '0 0 6px #000',
         WebkitBorderRadius: '8px',
         WebkitBoxShadow: '0 0 6px #000'
-    }).appendTo('#BookReader');
+    }).appendTo(self.parentElement);
 
     htmlStr =  '<h3 style="background:#615132;padding:10px;margin:0 0 10px;color:#fff;">Embed Bookreader</h3>';
     htmlStr += '<p style="padding:10px;line-height:18px;">The bookreader uses iframes for embedding. It will not work on web hosts that block iframes. The embed feature has been tested on blogspot.com blogs as well as self-hosted Wordpress blogs. This feature will NOT work on wordpress.com blogs.</p>';
@@ -3215,7 +3149,7 @@ BookReader.prototype.showEmbedCode = function() {
     htmlStr += '<a href="javascript:;" class="popOff" onclick="$(this.parentNode).remove();$(\'.coverUp\').hide();return false" style="color:#999;"><span>Close</span></a>';
 
     this.embedPopup.innerHTML = htmlStr;
-    $('#BookReader').append('<div class="coverUp" style="position:absolute;z-index:299;width:100%;height:100%;background:#000;opacity:.4;filter:alpha(opacity=40);" onclick="$(\'.popped\').hide();$(this).hide();"></div>');
+    $(this.parentElement).append('<div class="coverUp" style="position:absolute;z-index:299;width:100%;height:100%;background:#000;opacity:.4;filter:alpha(opacity=40);" onclick="$(\'.popped\').hide();$(this).hide();"></div>');
     $(this.embedPopup).find('textarea').click(function() {
         this.select();
     })
@@ -3242,7 +3176,7 @@ BookReader.prototype.showBookmarkCode = function() {
         MozBoxShadow: '0 0 6px #000',
         WebkitBorderRadius: '8px',
         WebkitBoxShadow: '0 0 6px #000'
-    }).appendTo('#BookReader');
+    }).appendTo(this.parentElement);
 
     htmlStr =  '<h3 style="background:#615132;padding:10px;margin:0 0 10px;color:#fff;">Add a bookmark</h3>';
     htmlStr += '<p style="padding:10px;line-height:18px;">You can add a bookmark to any page in any book. If you elect to make your bookmark public, other readers will be able to see it. <em>You must be logged in to your <a href="">Open Library account</a> to add bookmarks.</em></p>';
@@ -3250,7 +3184,7 @@ BookReader.prototype.showBookmarkCode = function() {
     htmlStr += '<a href="javascript:;" class="popOff" onclick="$(this.parentNode).remove();$(\'.coverUp\').hide();return false;" style="color:#999;"><span>Close</span></a>';
 
     this.bookmarkPopup.innerHTML = htmlStr;
-    $('#BookReader').append('<div class="coverUp" style="position:absolute;z-index:299;width:100%;height:100%;background:#000;opacity:.4;filter:alpha(opacity=40);" onclick="$(\'.popped\').hide();$(this).hide();"></div>');
+    $(this.parentElement).append('<div class="coverUp" style="position:absolute;z-index:299;width:100%;height:100%;background:#000;opacity:.4;filter:alpha(opacity=40);" onclick="$(\'.popped\').hide();$(this).hide();"></div>');
     $(this.bookmarkPopup).find('textarea').click(function() {
         this.select();
     })
@@ -3290,8 +3224,8 @@ BookReader.prototype.autoToggle = function() {
             this.flipFwdToIndex();        
         }
 
-        $('#BRtoolbar .play').hide();
-        $('#BRtoolbar .pause').show();
+        this.parentElement.find('.BRtoolbar .play').hide();
+        this.parentElement.find('.BRtoolbar .pause').show();
         this.autoTimer=setInterval(function(){
             if (self.animating) {return;}
             
@@ -3428,16 +3362,14 @@ BookReader.prototype.jumpIndexForRightEdgePageX = function(pageX) {
 BookReader.prototype.initNavbar = function() {
     // Setup nav / chapter / search results bar
     
-    $('#BookReader').append(
+    $(this.parentElement).append(
         '<div id="BRnav">'
         +     '<div id="BRpage">'   // Page turn buttons
-        +         '<span class="BRviewicons">'
-        +             '<button class="BRicon onepg"></button>'
-        +             '<button class="BRicon twopg"></button>'
-        +             '<button class="BRicon thumb"></button>'
-        //$$$ not yet implemented
-        //+             '<button class="BRicon fit"></button>'
-        +         '</span>'
+        +         '<button class="BRicon onepg"></button>'
+        +         '<button class="BRicon twopg"></button>'
+        +         '<button class="BRicon thumb"></button>'
+        // $$$ not yet implemented
+        //+         '<button class="BRicon fit"></button>'
         +         '<button class="BRicon zoom_in"></button>'
         +         '<button class="BRicon zoom_out"></button>'
         +         '<button class="BRicon book_left"></button>'
@@ -3492,22 +3424,6 @@ BookReader.prototype.initNavbar = function() {
     .append('<div id="pagenum"><span class="currentpage"></span></div>');
     //.wrap('<div class="ui-handle-helper-parent"></div>').parent(); // XXXmang is this used for hiding the tooltip?
     
-    // Add view mode icons from plugins
-    var viewPlugins = this.plugins['view']; // $$$ change to access through bookreader reference in nav bar plugin
-    var jNavElement = $('#BRnav'); // $$$ change to instance variable - stored dom element
-    console.log(viewPlugins); //xxx remove
-    for (viewPluginName in viewPlugins) {
-		// Add icon
-		console.log('adding ', viewPluginName); // xxx
-		var button = $('<button class="BRicon BRviewbutton ' + viewPluginName + '"></button>');
-    	button.bind('click', {'pluginName': viewPluginName}, function(e) {
-    		console.log('switching to mode ', e.data.pluginName); // xxx
-	    	self.switchMode(e.data.pluginName);
- 	    });
-
-		jNavElement.find('.BRviewicons').append(button);
-    }
-    
     this.updateNavPageNum(this.currentIndex());
 
     $("#BRzoombtn").draggable({axis:'y',containment:'parent'});
@@ -3526,7 +3442,7 @@ BookReader.prototype.initNavbar = function() {
 BookReader.prototype.initEmbedNavbar = function() {
     var thisLink = (window.location + '').replace('?ui=embed',''); // IA-specific
     
-    $('#BookReader').append(
+    $(this.parentElement).append(
         '<div id="BRnav">'
         +   "<span id='BRtoolbarbuttons'>"        
         +         '<button class="BRicon full"></button>'
@@ -3759,7 +3675,7 @@ BookReader.prototype.initToolbar = function(mode, ui) {
         readIcon = "<button class='BRicon read modal'></button>";
     }
     
-    $("#BookReader").append(
+    $(this.parentElement).append(
           "<div id='BRtoolbar'>"
         +   "<span id='BRtoolbarbuttons'>"
         +     "<form action='javascript:br.search($(\"#textSrch\").val());' id='booksearch'><input type='search' id='textSrch' name='textSrch' val='' placeholder='Search inside'/><button type='submit' id='btnSrch' name='btnSrch'>GO</button></form>"
@@ -3802,7 +3718,7 @@ BookReader.prototype.initToolbar = function(mode, ui) {
     this.updateToolbarZoom(this.reduce); // Pretty format
         
     if (ui == "embed" || ui == "touch") {
-        $("#BookReader a.logo").attr("target","_blank");
+        $(this.parentElement).find("a.logo").attr("target","_blank");
     }
 
     // $$$ turn this into a member variable
@@ -4098,7 +4014,7 @@ BookReader.prototype.bindNavigationHandlers = function() {
 
     
     this.initSwipeData();
-    $('#BookReader').die('mousemove.navigation').live('mousemove.navigation',
+    $(this.parentElement).die('mousemove.navigation').live('mousemove.navigation',
         { 'br': this },
         this.navigationMousemoveHandler
     );
@@ -4115,7 +4031,7 @@ BookReader.prototype.bindNavigationHandlers = function() {
 //______________________________________________________________________________
 // Unbind navigation handlers
 BookReader.prototype.unbindNavigationHandlers = function() {
-    $('#BookReader').die('mousemove.navigation');
+    $(this.parentElement).die('mousemove.navigation');
 }
 
 // navigationMousemoveHandler
@@ -4208,7 +4124,7 @@ BookReader.prototype.swipeMousemoveHandler = function(event) {
     var absY = Math.abs(_swipe.deltaY);
     
     // Minimum distance in the amount of tim to trigger the swipe
-    var minSwipeLength = Math.min($('#BookReader').width() / 5, 80);
+    var minSwipeLength = Math.min($(this.parentElement).width() / 5, 80);
     var maxSwipeTime = 400;
     
     // Check for horizontal swipe
@@ -4264,7 +4180,7 @@ BookReader.prototype.bindMozTouchHandlers = function() {
     var self = this;
     
     // Currently only want touch handlers in 2up
-    $('#BookReader').bind('MozTouchDown', function(event) {
+    $(this.parentElement).bind('MozTouchDown', function(event) {
         //console.log('MozTouchDown ' + event.originalEvent.streamId + ' ' + event.target + ' ' + event.clientX + ',' + event.clientY);
         if (this.mode == this.constMode2up) {
             event.preventDefault();
@@ -4767,6 +4683,7 @@ BookReader.prototype._getPageURI = function(index, reduce, rotate) {
  */
 BookReader.prototype.gotOpenLibraryRecord = function(self, olObject) {
     // $$$ could refactor this so that 'this' is available
+	console.log(self, olObject);
     if (olObject) {
         // console.log(olObject);
         if (olObject['table_of_contents']) {
@@ -4981,8 +4898,8 @@ BookReader.prototype.showProgressPopup = function(msg) {
     
     this.popup = document.createElement("div");
     $(this.popup).css({
-        top:      ($('#BookReader').height()*0.5-100) + 'px',
-        left:     ($('#BookReader').width()-300)*0.5 + 'px'
+        top:      ($(this.parentElement).height()*0.5-100) + 'px',
+        left:     ($(this.parentElement).width()-300)*0.5 + 'px'
     }).attr('className', 'BRprogresspopup');
 
     var bar = document.createElement("div");
@@ -4997,7 +4914,7 @@ BookReader.prototype.showProgressPopup = function(msg) {
         $(this.popup).append(msgdiv);
     }
     
-    $(this.popup).appendTo('#BookReader');
+    $(this.popup).appendTo(this.parentElement);
 }
 
 // removeProgressPopup
@@ -5411,10 +5328,15 @@ BookReader.prototype.initUIStrings = function()
                   
     for (var icon in titles) {
         if (titles.hasOwnProperty(icon)) {
-            $('#BookReader').find(icon).attr('title', titles[icon]);
+            $(this.parentElement).find(icon).attr('title', titles[icon]);
         }
     }
 }
+
+BookReader.prototype.find = function(selector) {
+	return this.parentElement.find(selector);
+};
+
 // This is a static method that doesn't require a BookReader instance
 BookReader.registerPlugin = function(pluginName, pluginClass){
 	listOfPlugins[pluginName] = pluginClass;

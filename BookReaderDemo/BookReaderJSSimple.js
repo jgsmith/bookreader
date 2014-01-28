@@ -91,7 +91,7 @@ br.getEmbedCode = function(frameWidth, frameHeight, viewParams) {
 }
 
 // Let's go!
-br.init();
+br.init($("#BookReader"));
 
 // read-aloud and search need backend compenents and are not supported in the demo
 $('#BRtoolbar').find('.read').hide();
